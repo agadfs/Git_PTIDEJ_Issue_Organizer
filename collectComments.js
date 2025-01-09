@@ -1,0 +1,323 @@
+import fs from "fs";
+import path from "path";
+import inquirer from "inquirer";
+import fileTreeSelectionPrompt from "inquirer-file-tree-selection-prompt";
+import simpleGit from "simple-git";
+import cliProgress from "cli-progress";
+import readline from "readline";
+
+inquirer.registerPrompt("file-tree-selection", fileTreeSelectionPrompt);
+
+let stopRequested = false;
+
+function extractComments(fileContent, fileExtension) {
+  const allLines = fileContent.split("\n");
+  let functionStack = 0;
+  const todoComments = [];
+  let currentFunctionName = "Global scope";
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i].trim();
+
+    // Track scope: Count opening and closing braces
+    if (line.includes("{")) {
+      functionStack++;
+    }
+    if (line.includes("}")) {
+      functionStack--;
+    }
+    if (currentFunctionName !== "Global scope" && functionStack === 1) {
+      currentFunctionName = "Global scope";
+    }
+    if (line.startsWith("public") || line.startsWith("private")) {
+      currentFunctionName = line.split("(")[0];
+    }
+
+    // Handle TODO comments and multi-line comments (including indented lines)
+    if (
+      line.startsWith("//") &&
+      !line.includes("Auto-generated") &&
+      !line.includes("Auto generated") &&
+      line.length > 12 &&
+      line.includes("TODO")
+    ) {
+      let currentCommentBlock = line;
+
+      // Capture multi-line TODO comments (including indented lines)
+      let j = i + 1;
+      while (allLines[j].trim().startsWith("//") &&
+      !line.includes("Auto-generated") &&
+      !line.includes("Auto generated") &&
+      line.length > 12 && j < allLines.length) {
+        
+        currentCommentBlock += `\n${allLines[j].trim()}`;
+        j++;
+      }
+      i = j - 1; // Update the main loop to skip processed lines
+
+      todoComments.push({
+        comment: currentCommentBlock.trim(),
+        function: `Function: ${currentFunctionName}`,
+      });
+    }
+  }
+
+  return todoComments;
+}
+
+let issues_countewr = 0;
+async function selectDirectory(promptMessage) {
+  const answers = await inquirer.prompt([
+    {
+      type: "file-tree-selection",
+      name: "directory",
+      message: promptMessage,
+      onlyShowDir: true,
+      root: "C:\\Users\\henri\\OneDrive\\Documentos\\projetos",
+    },
+  ]);
+  return answers.directory;
+}
+
+function findJavaFiles(dir) {
+  let results = [];
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      results = results.concat(findJavaFiles(filePath));
+    } else if (file.endsWith(".java")) {
+      results.push(filePath);
+    }
+  }
+  return results;
+}
+
+async function collectComments() {
+  try {
+    const repoPath = await selectDirectory("Select the folder to analyze:");
+    if (!fs.existsSync(path.join(repoPath, ".git"))) {
+      console.error("The selected folder is not a valid git repository.");
+      return;
+    }
+
+    const outputDir = await selectDirectory(
+      "Select the folder for the .txt to be saved:"
+    );
+
+    const git = simpleGit(repoPath);
+
+    const outputFilePath = path.join(outputDir, "comments_by_commit.txt");
+    const javaFiles = findJavaFiles(repoPath);
+
+    console.log('Press "s" to stop the process at any time.');
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.input.on("keypress", (char, key) => {
+      if (key && key.name === "s") {
+        console.log("\nStopping process...");
+        stopRequested = true;
+        rl.close();
+      }
+    });
+
+    const progressBar = new cliProgress.SingleBar(
+      {},
+      cliProgress.Presets.shades_classic
+    );
+    progressBar.start(javaFiles.length, 0);
+
+    const groupedComments = {};
+    const repoCommits = await git.log();
+
+    const startTime = Date.now(); // Record the start time of the process
+    process.stdout.write("\u001b[3B"); // Move cursor up 3 lines and clear them
+const tenPercentFiles = Math.ceil(javaFiles.length * 0.1); // Calculate 10% of total files
+let firstTenPercentTime = 0; // Time taken for the first 10% of files
+let estimatedTotalTime = 0; // Estimated total processing time
+let dynamicRemainingTime = 0; // Dynamically updated remaining time
+let lastRecalculationThreshold = 0; // Track the last threshold for recalculation (e.g., 10%, 20%)
+
+for (const [index, file] of javaFiles.entries()) {
+  if (stopRequested) break;
+
+  const elapsedTime = (Date.now() - startTime) / 1000; // Total elapsed time in seconds
+  const processedFiles = index + 1; // Files processed so far
+  const totalFiles = javaFiles.length; // Total files to process
+  const remainingFiles = totalFiles - processedFiles; // Files left to process
+
+  // Recalculate every 10% of files read
+  if (processedFiles >= lastRecalculationThreshold + tenPercentFiles) {
+    lastRecalculationThreshold = Math.floor(processedFiles / tenPercentFiles) * tenPercentFiles; // Update the threshold
+    const avgTimePerFile = elapsedTime / processedFiles; // Average time per file
+    estimatedTotalTime = avgTimePerFile * totalFiles; // Recalculate the total processing time
+    dynamicRemainingTime = Math.ceil(estimatedTotalTime - elapsedTime); // Update the remaining time
+  } else {
+    // Continuously decrement the remaining time based on elapsed time
+    dynamicRemainingTime = Math.max(0, Math.ceil(estimatedTotalTime - elapsedTime));
+  }
+
+  const estimatedRemainingTime = processedFiles <= tenPercentFiles
+    ? `Calculating...` // Show "Calculating..." during the first 10%
+    : `${dynamicRemainingTime} seconds`; // Countdown or recalculated time after 10%
+
+  const relativeFilePath = path.relative(repoPath, file);
+
+
+      // Clear the lines and write updated information
+      process.stdout.write("\u001b[3A\u001b[K"); // Move cursor up 3 lines and clear them
+      process.stdout.write(`Made by Henrique de Freitas Serra - 2025\n `); // Customizable message
+      process.stdout.write(
+        `Estimated time remaining: ${estimatedRemainingTime} \n`
+      );
+      process.stdout.write(`Current file: ${relativeFilePath} \n`);
+
+      // Update the progress bar
+      progressBar.update(index + 1);
+
+      const fileContent = fs.readFileSync(file, "utf8");
+      const commentsWithFunctions = extractComments(fileContent, "java");
+
+      if (commentsWithFunctions.length > 0) {
+        // Fetch detailed commit history for the file
+        const fileCommits = await git.raw([
+          "log",
+          "--name-only",
+          "--pretty=format:%H;%an;%ae;%ad",
+          relativeFilePath,
+        ]);
+
+        if (!fileCommits) {
+          continue;
+        }
+
+        const commits = fileCommits.split("\n\n").map((entry) => {
+          const [header, ...files] = entry.split("\n");
+          const [hash, authorName, authorEmail, date] = header.split(";");
+          return {
+            hash,
+            authorName,
+            authorEmail,
+            date,
+            files,
+          };
+        });
+
+        if (commits.length === 0) {
+          continue;
+        }
+
+        const latestCommit = commits[0];
+        const commitDate = new Date(latestCommit.date);
+
+        for (const { comment, function: funcName } of commentsWithFunctions) {
+          const key = `${relativeFilePath}:${funcName}`;
+          if (!groupedComments[key]) {
+            groupedComments[key] = {
+              commitDate,
+              author: `${latestCommit.authorName} <${latestCommit.authorEmail}>`,
+              file: relativeFilePath,
+              function: funcName,
+              comments: [],
+            };
+          }
+          groupedComments[key].comments.push(comment);
+        }
+      }
+
+      progressBar.increment();
+    }
+
+    // Clear the dynamic lines and finalize the progress bar
+    process.stdout.write("\u001b[3A\u001b[K"); // Move cursor up 3 lines and clear them
+    progressBar.stop();
+    process.stdout.write("Processing complete.\n");
+    rl.close();
+
+    // Prepare and sort output data
+    const sortedComments = Object.values(groupedComments).sort(
+      (a, b) => b.commitDate - a.commitDate
+    );
+
+    // Write to file
+    let outputContent = "";
+    for (let i = 0; i < sortedComments.length; i++) {
+      const data = sortedComments[i];
+
+      const formattedDate = data.commitDate.toLocaleString();
+
+      // Only include Commit, Author, and File headers if this is the first entry or the file is different from the previous
+      if (i === 0 || data.file !== sortedComments[i - 1].file) {
+        issues_countewr++;
+
+        let boxWidth = 60; // Base box width
+        boxWidth = Math.max(boxWidth, data.file.length + 20); // Ensure box is wide enough for the file name
+
+        // Create dynamic horizontal lines
+        const horizontalLine = "‾".repeat(boxWidth - 2);
+        const bottomLine = "_".repeat(boxWidth - 2);
+
+        // Function to pad or truncate text to fit the box
+        const padText = (text, width) => {
+          if (text.length > width) {
+            return text.slice(0, width - 3) + "..."; // Truncate and add ellipsis if text is too long
+          }
+          const padding = Math.max(0, width - text.length); // Ensure padding is not negative
+          return text + " ".repeat(padding);
+        };
+
+        outputContent += ` ${bottomLine}\n`;
+        outputContent += `|${padText(
+          `Commit: ${formattedDate}`,
+          boxWidth - 2
+        )}|\n`;
+        outputContent += `|${padText(
+          `Author: ${data.author}`,
+          boxWidth - 2
+        )}|\n`;
+        outputContent += `|${padText(`File: ${data.file}`, boxWidth - 2)}|\n`;
+        outputContent += ` ${horizontalLine}\n\n`;
+        outputContent += ` Counter: ${issues_countewr}\n\n`;
+      }
+
+      outputContent += `\n`;
+      outputContent += `${data.function}\n`;
+      outputContent += `Comments:\n${data.comments.join("\n")}\n\n`;
+
+      // Add a separator line between functions in the same file
+      if (
+        i < sortedComments.length - 1 &&
+        data.file === sortedComments[i + 1].file
+      ) {
+        outputContent += "-".repeat(120) + "\n\n";
+      }
+
+      // Add separator line only if the next data has a different file name
+      if (
+        i < sortedComments.length - 1 &&
+        data.file !== sortedComments[i + 1].file
+      ) {
+        const separatorLine = "_".repeat(120); // Adjust separator width
+        const verticalSeparator = "|".repeat(120); // Adjust vertical separator width
+        const overline = "‾".repeat(120); // Adjust overline width
+
+        outputContent += `${separatorLine}\n`;
+        outputContent += `${verticalSeparator}\n`;
+        outputContent += `${overline}\n`;
+      }
+    }
+
+    fs.writeFileSync(outputFilePath, outputContent, "utf8");
+    console.log(`Comments collected and saved at ${outputFilePath}`);
+    console.log(`Total issues found: ${issues_countewr}`);
+  } catch (err) {
+    console.error("Error fetching comments:", err);
+  }
+}
+
+collectComments();
