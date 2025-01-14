@@ -513,9 +513,9 @@ async function collectComments() {
         } else {
           correct_title = title_builder;
         }
-        /*   if(issues_countewr === 1){
+          if(issues_countewr === 1){
           await createIssueAPI(correct_title, correct_description);
-         }  */
+         } 
       }
       outputContent += `## Issue ID number: ${issues_countewr}\n\n`;
       outputContent += `## Title: ${correct_title}\n\n`;
