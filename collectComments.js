@@ -18,6 +18,7 @@ const REPO_OWNER = "ptidejteam";
 const REPO_NAME = "ptidej-Ptidej";
  */
 async function createIssueAPI(title, body) {
+  console.log(`Creating issue: ${title}`);
   const response = await fetch(
     `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
     {
@@ -373,25 +374,24 @@ async function collectComments() {
     ];
 
     function extractDetails(comment, keyword) {
-      
       const multilineRegex = new RegExp(`${keyword}\\s+(.*?)\\s+@#END`, "ig");
       const singleLineRegex = new RegExp(`${keyword}\\s+([^(\\s@#)]+)`, "ig");
-    
+
       let details = [];
-    
+
       // Find all multiline matches
       let match;
-      
+
       while ((match = multilineRegex.exec(comment)) !== null) {
         if (match[1].trim()) {
           details.push(match[1].trim());
           console.log("Multiline match:", match[1].trim());
-    
+
           // Remove the matched portion from the comment to prevent reprocessing
           comment = comment.replace(match[0], "");
         }
       }
-    
+
       // Process remaining single-line matches
       while ((match = singleLineRegex.exec(comment)) !== null) {
         if (match[1].trim() && match[1].trim().toLowerCase() !== "null") {
@@ -399,19 +399,16 @@ async function collectComments() {
           console.log("Single-line match:", match[1].trim());
         }
       }
-    
+
       return details.length > 0 ? details : ["Unknown"];
     }
-    
 
     function generateDescription(comments) {
       const detectedIssues = {};
-     
+
       comments.forEach((comment) => {
-       
         issueDefinitions.forEach((issue) => {
           if (issue.keywords.some((keyword) => comment.includes(keyword))) {
-           
             const details = extractDetails(comment, issue.keywords[0]);
             if (!detectedIssues[issue.name]) {
               detectedIssues[issue.name] = new Set(); // Use a Set to avoid duplicates
@@ -419,48 +416,42 @@ async function collectComments() {
             details.forEach((detail) => {
               detectedIssues[issue.name].add(issue.key_container(detail)); // Add details to the Set
             });
-          
-    
           }
         });
       });
-    
+
       let description = "";
       let issues_keys = "";
-    
+
       if (Object.keys(detectedIssues).length > 0) {
         description += `\nDetected Issues:\n`;
         const issueCounts = {};
-    
+
         Object.entries(detectedIssues).forEach(([issueName, keyContainers]) => {
           keyContainers.forEach((keyContainer) => {
             description += `- ${keyContainer}\n`;
           });
-    
+
           if (!issueCounts[issueName]) {
             issueCounts[issueName] = 0;
           }
           issueCounts[issueName] += keyContainers.size; // Count unique entries
         });
-    
-        const formattedIssues = Object.entries(issueCounts).map(([key, count]) =>
-          count === 1 ? key : `${count} ${key}s`
+
+        const formattedIssues = Object.entries(issueCounts).map(
+          ([key, count]) => (count === 1 ? key : `${count} ${key}s`)
         );
-    
+
         issues_keys = formattedIssues.join(", ");
       } else {
         description += `\nNo specific issue types detected.`;
       }
-    
+
       return {
         description: description,
         issues: issues_keys,
       };
     }
-    
-    
-    
-    
 
     for (let i = 0; i < sortedComments.length; i++) {
       const data = sortedComments[i];
@@ -504,18 +495,17 @@ async function collectComments() {
         const fileNameWithoutExtension = parts.pop().replace(/\.java$/, "");
 
         title_builder = generateTitle(firstFolder, fileNameWithoutExtension);
-        const dataDesc = generateDescription(data.comments); 
+        const dataDesc = generateDescription(data.comments);
         description_builder = dataDesc.description;
         correct_description = description_builder;
         if (dataDesc.issues !== "") {
-          correct_title =
-            title_builder + " -> " + dataDesc.issues;
+          correct_title = title_builder + " -> " + dataDesc.issues;
         } else {
           correct_title = title_builder;
         }
-          if(issues_countewr === 1){
+        if (issues_countewr === 1) {
           await createIssueAPI(correct_title, correct_description);
-         } 
+        }
       }
       outputContent += `## Issue ID number: ${issues_countewr}\n\n`;
       outputContent += `## Title: ${correct_title}\n\n`;
