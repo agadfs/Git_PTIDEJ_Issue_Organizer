@@ -6,6 +6,7 @@ import simpleGit from "simple-git";
 import cliProgress from "cli-progress";
 import readline from "readline";
 import fetch from "node-fetch";
+import { title } from "process";
 
 const GITHUB_TOKEN = "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";
 const REPO_OWNER = "agadfs";
@@ -17,17 +18,20 @@ const REPO_OWNER = "ptidejteam";
 const REPO_NAME = "ptidej-Ptidej";
  */
 async function createIssueAPI(title, body) {
-  const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
-    method: "POST",
-    headers: {
-      Authorization: `token ${GITHUB_TOKEN}`,
-      Accept: "application/vnd.github.v3+json",
-    },
-    body: JSON.stringify({
-      title,
-      body,
-    }),
-  });
+  const response = await fetch(
+    `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+      body: JSON.stringify({
+        title,
+        body,
+      }),
+    }
+  );
 
   if (response.ok) {
     const issue = await response.json();
@@ -73,7 +77,6 @@ function extractComments(fileContent, fileExtension, filePath) {
       line.startsWith("//") &&
       !line.includes("Auto-generated") &&
       !line.includes("Auto generated") &&
-      line.length > 12 &&
       line.includes("TODO")
     ) {
       let currentCommentBlock = line;
@@ -84,7 +87,6 @@ function extractComments(fileContent, fileExtension, filePath) {
         allLines[j].trim().startsWith("//") &&
         !line.includes("Auto-generated") &&
         !line.includes("Auto generated") &&
-        line.length > 12 &&
         j < allLines.length
       ) {
         currentCommentBlock += `\n${allLines[j].trim()}`;
@@ -129,6 +131,7 @@ function findJavaFiles(dir) {
       results.push(filePath);
     }
   }
+
   return results;
 }
 
@@ -177,7 +180,7 @@ async function collectComments() {
     process.stdout.write("\u001b[3B"); // Move cursor up 3 lines and clear them
     const tenPercentFiles = Math.ceil(javaFiles.length * 0.1); // Calculate 10% of total files
     let firstTenPercentTime = 0; // Time taken for the first 10% of files
-    let estimatedTotalTime = 0; // Estimated total processing time   
+    let estimatedTotalTime = 0; // Estimated total processing time
     let dynamicRemainingTime = 0; // Dynamically updated remaining time
     let lastRecalculationThreshold = 0; // Track the last threshold for recalculation (e.g., 10%, 20%)
 
@@ -299,50 +302,165 @@ async function collectComments() {
     let outputContent = "";
     let title_builder = "";
     let description_builder = "";
-
+    let correct_description = "";
+    let correct_title = "";
     function generateTitle(firstFolder, fileNameWithoutExtension) {
       return `${firstFolder} on ${fileNameWithoutExtension}.java`;
     }
 
     const issueDefinitions = [
       {
-        name: "",
-        keywords: ["@#1"],
-        key_container:
-          "Issue 1: currently the code is not optimized, ",
+        name: "Add Method",
+        keywords: ["@#ADD_METHOD"],
+        key_container: (match) =>
+          `The method ${match}() should be implemented.`,
       },
-      
-
-      
+      {
+        name: "Remove Method",
+        keywords: ["@#REMOVE_METHOD"],
+        key_container: (match) => `The method ${match}() should be removed.`,
+      },
+      {
+        name: "Add Constant",
+        keywords: ["@#ADD_CONSTANT"],
+        key_container: (match) => `The constant ${match} should be added.`,
+      },
+      {
+        name: "Remove Constant",
+        keywords: ["@#REMOVE_CONSTANT"],
+        key_container: (match) => `The constant ${match} should be removed.`,
+      },
+      {
+        name: "Fix Bug",
+        keywords: ["@#FIX_BUG", "@#END_BUG"],
+        key_container: (match) => `Fix the following bug: ${match}.`,
+      },
+      {
+        name: "Improve Performance",
+        keywords: ["@#IMPROVE_PERFORMANCE", "@#END_PERFORMANCE"],
+        key_container: (match) => `Improve performance: ${match}.`,
+      },
+      {
+        name: "Refactor Code",
+        keywords: ["@#REFACTOR_CODE", "@#END_REFACTOR"],
+        key_container: (match) => `Refactor the code: ${match}.`,
+      },
+      {
+        name: "Update Dependency",
+        keywords: ["@#UPDATE_DEPENDENCY"],
+        key_container: (match) => `Update the dependency: ${match}.`,
+      },
+      {
+        name: "Add Documentation",
+        keywords: ["@#ADD_DOCUMENTATION", "@#END_DOCUMENTATION"],
+        key_container: (match) => `Add documentation: ${match}.`,
+      },
+      {
+        name: "Remove Deprecated",
+        keywords: ["@#REMOVE_DEPRECATED", "@#END_DEPRECATED"],
+        key_container: (match) => `Remove deprecated code: ${match}.`,
+      },
+      {
+        name: "Handle Error",
+        keywords: ["@#HANDLE_ERROR", "@#END_ERROR"],
+        key_container: (match) => `Handle the error: ${match}.`,
+      },
+      {
+        name: "Add Test",
+        keywords: ["@#ADD_TEST", "@#END_TEST"],
+        key_container: (match) => `Add a test case: ${match}.`,
+      },
     ];
 
-    function generateDescription(comments) {
-      const detectedIssues = new Map(); // Map to store detected issues with their key_containers
+    function extractDetails(comment, keyword) {
+      
+      const multilineRegex = new RegExp(`${keyword}\\s+(.*?)\\s+@#END`, "ig");
+      const singleLineRegex = new RegExp(`${keyword}\\s+([^(\\s@#)]+)`, "ig");
     
-      // Loop through the comments and check for matches with all keywords in issueDefinitions
+      let details = [];
+    
+      // Find all multiline matches
+      let match;
+      
+      while ((match = multilineRegex.exec(comment)) !== null) {
+        if (match[1].trim()) {
+          details.push(match[1].trim());
+          console.log("Multiline match:", match[1].trim());
+    
+          // Remove the matched portion from the comment to prevent reprocessing
+          comment = comment.replace(match[0], "");
+        }
+      }
+    
+      // Process remaining single-line matches
+      while ((match = singleLineRegex.exec(comment)) !== null) {
+        if (match[1].trim() && match[1].trim().toLowerCase() !== "null") {
+          details.push(match[1].trim());
+          console.log("Single-line match:", match[1].trim());
+        }
+      }
+    
+      return details.length > 0 ? details : ["Unknown"];
+    }
+    
+
+    function generateDescription(comments) {
+      const detectedIssues = {};
+     
       comments.forEach((comment) => {
+       
         issueDefinitions.forEach((issue) => {
-          if (issue.keywords.every((keyword) => comment.toLowerCase().includes(keyword.toLowerCase()))) {
-            if (!detectedIssues.has(issue.name)) {
-              detectedIssues.set(issue.name, []);
+          if (issue.keywords.some((keyword) => comment.includes(keyword))) {
+           
+            const details = extractDetails(comment, issue.keywords[0]);
+            if (!detectedIssues[issue.name]) {
+              detectedIssues[issue.name] = new Set(); // Use a Set to avoid duplicates
             }
-            detectedIssues.get(issue.name).push(issue.key_container);
+            details.forEach((detail) => {
+              detectedIssues[issue.name].add(issue.key_container(detail)); // Add details to the Set
+            });
+          
+    
           }
         });
       });
     
-      // Generate a description based on detected issues
-      let description = ``;
-      if (detectedIssues.size > 0) {
-        description += `\n${Array.from(detectedIssues.keys()).join(", ")}.`;
+      let description = "";
+      let issues_keys = "";
     
-        
+      if (Object.keys(detectedIssues).length > 0) {
+        description += `\nDetected Issues:\n`;
+        const issueCounts = {};
+    
+        Object.entries(detectedIssues).forEach(([issueName, keyContainers]) => {
+          keyContainers.forEach((keyContainer) => {
+            description += `- ${keyContainer}\n`;
+          });
+    
+          if (!issueCounts[issueName]) {
+            issueCounts[issueName] = 0;
+          }
+          issueCounts[issueName] += keyContainers.size; // Count unique entries
+        });
+    
+        const formattedIssues = Object.entries(issueCounts).map(([key, count]) =>
+          count === 1 ? key : `${count} ${key}s`
+        );
+    
+        issues_keys = formattedIssues.join(", ");
       } else {
         description += `\nNo specific issue types detected.`;
       }
     
-      return description;
+      return {
+        description: description,
+        issues: issues_keys,
+      };
     }
+    
+    
+    
+    
 
     for (let i = 0; i < sortedComments.length; i++) {
       const data = sortedComments[i];
@@ -386,18 +504,25 @@ async function collectComments() {
         const fileNameWithoutExtension = parts.pop().replace(/\.java$/, "");
 
         title_builder = generateTitle(firstFolder, fileNameWithoutExtension);
-        description_builder = generateDescription(data.comments);
-/*         if(issues_countewr === 1){
-          await createIssueAPI(title_builder, description_builder);
-         } */
-        outputContent += `Title: ${title_builder}\n\n`;
-        outputContent += `Description: ${description_builder}\n`;
-        outputContent += `Issue ID number: ${issues_countewr}\n\n`;
+        const dataDesc = generateDescription(data.comments); 
+        description_builder = dataDesc.description;
+        correct_description = description_builder;
+        if (dataDesc.issues !== "") {
+          correct_title =
+            title_builder + " -> " + dataDesc.issues;
+        } else {
+          correct_title = title_builder;
+        }
+        /*   if(issues_countewr === 1){
+          await createIssueAPI(correct_title, correct_description);
+         }  */
       }
-
+      outputContent += `## Issue ID number: ${issues_countewr}\n\n`;
+      outputContent += `## Title: ${correct_title}\n\n`;
+      outputContent += `## Fast description: ${correct_description}\n\n`;
       outputContent += `\n`;
-      outputContent += `${data.function}\n`;
-      outputContent += `Comments:\n${data.comments.join("\n")}\n\n`;
+      outputContent += `## ${data.function}\n`;
+      outputContent += `## Comments:\n${data.comments.join("\n")}\n\n`;
 
       // Add a separator line between functions in the same file
       if (
@@ -420,8 +545,6 @@ async function collectComments() {
         outputContent += `${verticalSeparator}\n`;
         outputContent += `${overline}\n`;
       }
-
-     
     }
 
     fs.writeFileSync(outputFilePath, outputContent, "utf8");
@@ -433,4 +556,3 @@ async function collectComments() {
 }
 
 collectComments();
-
